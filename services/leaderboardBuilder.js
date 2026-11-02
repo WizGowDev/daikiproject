@@ -1,76 +1,43 @@
-const fs = require("fs");
-const path = require("path");
 const { EmbedBuilder } = require("discord.js");
+const { getAccounts } = require("./accountsStore");
 const { getRR } = require("./valorant");
 
-const dataDir = process.env.DATA_DIR || path.join(__dirname, "../data");
-const accountsPath = path.join(dataDir, "accounts.json");
+const MAX_DESCRIPTION_LENGTH = 4000; // limite Discord : 4096
 
-function ensureAccountsFile() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  if (!fs.existsSync(accountsPath)) {
-    fs.writeFileSync(accountsPath, "[]", "utf8");
-  }
-}
-
-function readAccounts() {
-  ensureAccountsFile();
-
-  try {
-    const file = fs.readFileSync(accountsPath, "utf8");
-    const accounts = JSON.parse(file);
-
-    if (!Array.isArray(accounts)) {
-      return [];
-    }
-
-    return accounts;
-  } catch (error) {
-    console.error("Erreur lecture accounts.json :", error);
-    return [];
-  }
-}
+const RANK_TRANSLATIONS = {
+  iron: "Fer",
+  bronze: "Bronze",
+  silver: "Argent",
+  gold: "Or",
+  platinum: "Platine",
+  diamond: "Diamant",
+  ascendant: "Ascendant",
+  immortal: "Immortel",
+  radiant: "Radiant",
+  unrated: "Non classé",
+  unranked: "Non classé"
+};
 
 function formatRR(value) {
-  if (value === undefined || value === null) return "00";
-
   const number = Number(value);
-  if (Number.isNaN(number)) return "00";
 
-  const rr = number % 100;
-  return String(rr).padStart(2, "0");
+  if (!Number.isFinite(number)) return "00";
+
+  return String(number).padStart(2, "0");
 }
 
 function translateRank(rank) {
   if (!rank) return "Inconnu";
 
-  const map = {
-    iron: "Fer",
-    bronze: "Bronze",
-    silver: "Argent",
-    gold: "Or",
-    platinum: "Platine",
-    diamond: "Diamant",
-    ascendant: "Ascendant",
-    immortal: "Immortel",
-    radiant: "Radiant"
-  };
+  for (const [english, french] of Object.entries(RANK_TRANSLATIONS)) {
+    const regex = new RegExp(english, "i");
 
-  let translatedRank = rank;
-
-  for (const englishRank in map) {
-    const regex = new RegExp(englishRank, "i");
-
-    if (regex.test(translatedRank)) {
-      translatedRank = translatedRank.replace(regex, map[englishRank]);
-      break;
+    if (regex.test(rank)) {
+      return rank.replace(regex, french);
     }
   }
 
-  return translatedRank;
+  return rank;
 }
 
 function getPositionLabel(index) {
@@ -80,8 +47,26 @@ function getPositionLabel(index) {
   return `${index + 1}ème`;
 }
 
+function formatPlayer(player) {
+  if (player.unavailable) {
+    return `${player.name} (Indisponible) ⚠️`;
+  }
+
+  const rank = translateRank(player.rank);
+  const rr = formatRR(player.rr);
+  const warning = player.stale ? " ⚠️" : "";
+
+  // Le Top n'apparaît que si le joueur est dans le classement officiel
+  // (Immortel 1 et plus, selon ce que renvoie l'API).
+  const top = player.placement ? ` • Top ${player.placement}` : "";
+
+  return `${player.name} (${rank}${top} | ${rr}rr)${warning}`;
+}
+
 async function buildLeaderboardPayload() {
-  const accounts = readAccounts();
+  // Peut lever une erreur si accounts.json est corrompu : c'est voulu,
+  // pour que le leaderboard affiché ne soit pas écrasé par un message d'erreur.
+  const accounts = getAccounts();
 
   if (accounts.length === 0) {
     return {
@@ -101,47 +86,43 @@ async function buildLeaderboardPayload() {
       return {
         name: account.name,
         tag: account.tag,
-        rank: result.value?.rank || "Inconnu",
-        elo: result.value?.rr ?? 0,
-        hasError: false
+        rank: result.value.rank,
+        rr: result.value.rr,
+        elo: result.value.elo,
+        placement: result.value.placement,
+        stale: result.value.stale,
+        unavailable: false
       };
     }
 
     return {
       name: account.name,
       tag: account.tag,
-      rank: "Inconnu",
-      elo: 0,
-      hasError: true
+      elo: -1,
+      unavailable: true
     };
   });
 
-  players.sort((a, b) => b.elo - a.elo);
+  players.sort((a, b) => b.elo - a.elo || a.name.localeCompare(b.name));
 
   let description = "";
 
-  players.forEach((player, index) => {
-    const position = getPositionLabel(index);
-    const rank = translateRank(player.rank);
-    const rr = formatRR(player.elo);
+  for (let index = 0; index < players.length; index++) {
+    const block = `${getPositionLabel(index)}\n${formatPlayer(players[index])}\n\n`;
 
-    description += `${position}\n`;
-    description += `${player.name} (${rank} | ${rr}rr)`;
-
-    if (player.hasError) {
-      description += " ⚠️";
+    if (description.length + block.length > MAX_DESCRIPTION_LENGTH) {
+      description += `…et ${players.length - index} autre(s) joueur(s)`;
+      break;
     }
 
-    description += "\n\n";
-  });
+    description += block;
+  }
 
   const embed = new EmbedBuilder()
     .setTitle("Classement des joueurs")
     .setColor(0x1a1519)
     .setDescription(description)
-    .setFooter({
-      text: "Mise à jour automatique"
-    })
+    .setFooter({ text: "Mise à jour automatique" })
     .setTimestamp();
 
   return {
