@@ -2,32 +2,7 @@ const { EmbedBuilder } = require("discord.js");
 const { getAccounts } = require("./accountsStore");
 const { getRR } = require("./valorant");
 
-const MAX_DESCRIPTION_LENGTH = 3900; // limite Discord : 4096 (marge pour le bloc ansi)
-
-// Mode d'affichage des couleurs, réglable avec la variable RANK_COLOR_MODE :
-//   "ansi"  (défaut) : texte du rang coloré (bloc de code ansi)
-//   "emoji"          : pastille de couleur devant le rang (compatible partout)
-//   "off"            : aucune couleur
-const COLOR_MODE = (process.env.RANK_COLOR_MODE || "ansi").toLowerCase();
-
-const ESC = "\u001b";
-const ANSI_RESET = `${ESC}[0m`;
-const DEFAULT_EMBED_COLOR = 0x1a1519;
-
-// ansi : codes de couleur supportés par Discord (30 gris, 31 rouge, 32 vert,
-//        33 jaune, 34 bleu, 35 rose, 36 cyan, 37 blanc ; 1 = gras, 4 = souligné)
-// hex  : couleur de la barre latérale de l'embed (celle du 1er du classement)
-const RANK_STYLES = {
-  iron: { ansi: "30", emoji: "⬛", hex: 0x6b6b6b },
-  bronze: { ansi: "33", emoji: "🟫", hex: 0xa5662a },
-  silver: { ansi: "37", emoji: "⬜", hex: 0xc0c4c8 },
-  gold: { ansi: "1;33", emoji: "🟨", hex: 0xe6b93a },
-  platinum: { ansi: "36", emoji: "🟦", hex: 0x3bb3b0 },
-  diamond: { ansi: "35", emoji: "🟪", hex: 0xb27df0 },
-  ascendant: { ansi: "32", emoji: "🟩", hex: 0x2ea867 },
-  immortal: { ansi: "31", emoji: "🟥", hex: 0xd1344f },
-  radiant: { ansi: "4;33", emoji: "✨", hex: 0xf6e58d }
-};
+const MAX_DESCRIPTION_LENGTH = 4000; // limite Discord : 4096
 
 const RANK_TRANSLATIONS = {
   iron: "Fer",
@@ -42,18 +17,6 @@ const RANK_TRANSLATIONS = {
   unrated: "Non classé",
   unranked: "Non classé"
 };
-
-function getRankStyle(rank) {
-  if (!rank) return null;
-
-  for (const [key, style] of Object.entries(RANK_STYLES)) {
-    if (new RegExp(key, "i").test(rank)) {
-      return style;
-    }
-  }
-
-  return null;
-}
 
 function formatRR(value) {
   const number = Number(value);
@@ -84,26 +47,12 @@ function getPositionLabel(index) {
   return `${index + 1}ème`;
 }
 
-function colorRank(text, style) {
-  if (!style) return text;
-
-  if (COLOR_MODE === "ansi") {
-    return `${ESC}[${style.ansi}m${text}${ANSI_RESET}`;
-  }
-
-  if (COLOR_MODE === "emoji") {
-    return `${style.emoji} ${text}`;
-  }
-
-  return text;
-}
-
 function formatPlayer(player) {
   if (player.unavailable) {
     return `${player.name} (Indisponible) ⚠️`;
   }
 
-  const rank = colorRank(translateRank(player.rank), getRankStyle(player.rank));
+  const rank = translateRank(player.rank);
   const rr = formatRR(player.rr);
   const warning = player.stale ? " ⚠️" : "";
 
@@ -169,20 +118,9 @@ async function buildLeaderboardPayload({ force = false } = {}) {
     description += block;
   }
 
-  if (COLOR_MODE === "ansi") {
-    description = "```ansi\n" + description.trimEnd() + "\n```";
-  }
-
-  // La barre latérale prend la couleur du rang du joueur en tête.
-  const leader = players[0];
-  const embedColor =
-    COLOR_MODE !== "off" && leader && !leader.unavailable
-      ? getRankStyle(leader.rank)?.hex ?? DEFAULT_EMBED_COLOR
-      : DEFAULT_EMBED_COLOR;
-
   const embed = new EmbedBuilder()
     .setTitle("Classement des joueurs")
-    .setColor(embedColor)
+    .setColor(0x1a1519)
     .setDescription(description)
     .setFooter({ text: "Mise à jour automatique" })
     .setTimestamp();
