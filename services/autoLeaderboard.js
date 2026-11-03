@@ -1,74 +1,77 @@
-const fs = require("fs");
-const path = require("path");
 const { buildLeaderboardPayload } = require("./leaderboardBuilder");
+const { readJson, deleteJson } = require("./accountsStore");
 
-const dataDir = process.env.DATA_DIR || path.join(__dirname, "../data");
-const configPath = path.join(dataDir, "autoLeaderboard.json");
+const CONFIG_FILE = "autoLeaderboard.json";
 
-const UPDATE_INTERVAL =
-  Number(process.env.LEADERBOARD_UPDATE_INTERVAL_MS) || 5 * 60 * 1000;
+// Intervalle minimum de 60 s pour ne pas saturer l'API Valorant.
+const UPDATE_INTERVAL = Math.max(
+  Number(process.env.LEADERBOARD_UPDATE_INTERVAL_MS) || 5 * 60 * 1000,
+  60 * 1000
+);
 
-function ensureConfigFolder() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-}
+const UNKNOWN_CHANNEL = 10003;
+const UNKNOWN_MESSAGE = 10008;
 
-function readConfig() {
-  ensureConfigFolder();
-
-  if (!fs.existsSync(configPath)) {
-    return null;
-  }
+// Met à jour le message du leaderboard automatique.
+// force: true ignore le cache et redemande les données à l'API.
+// Renvoie : "updated" | "no-config" | "deleted" | "error"
+async function updateLeaderboardMessage(client, { force = false } = {}) {
+  let config;
 
   try {
-    return JSON.parse(fs.readFileSync(configPath, "utf8"));
+    config = readJson(CONFIG_FILE, null);
   } catch (error) {
-    console.error("Erreur lecture autoLeaderboard.json :", error);
-    return null;
+    console.error("Erreur lecture autoLeaderboard.json :", error.message);
+    return "error";
   }
-}
 
-async function updateLeaderboardMessage(client) {
-  const config = readConfig();
-
-  if (!config || !config.channelId || !config.messageId) {
-    return;
+  if (!config?.channelId || !config?.messageId) {
+    return "no-config";
   }
 
   try {
     const channel = await client.channels.fetch(config.channelId);
-
-    if (!channel || !channel.messages) {
-      console.log("Salon du leaderboard introuvable.");
-      return;
-    }
-
     const message = await channel.messages.fetch(config.messageId);
-
-    if (!message) {
-      console.log("Message du leaderboard introuvable.");
-      return;
-    }
-
-    const payload = await buildLeaderboardPayload();
+    const payload = await buildLeaderboardPayload({ force });
 
     await message.edit(payload);
 
-    console.log("✅ Leaderboard mis à jour automatiquement");
+    console.log(
+      force
+        ? "✅ Leaderboard mis à jour sur commande"
+        : "✅ Leaderboard mis à jour automatiquement"
+    );
+
+    return "updated";
   } catch (error) {
-    console.error("Erreur update auto leaderboard :", error.message);
+    if (error.code === UNKNOWN_CHANNEL || error.code === UNKNOWN_MESSAGE) {
+      console.error(
+        "❌ Salon ou message du leaderboard supprimé : configuration effacée. Relance /setleaderboard."
+      );
+      deleteJson(CONFIG_FILE);
+      return "deleted";
+    }
+
+    console.error("Erreur update leaderboard :", error.message);
+    return "error";
   }
 }
 
+// setTimeout récursif plutôt que setInterval : une mise à jour lente
+// ne peut jamais chevaucher la suivante.
 function startAutoLeaderboard(client) {
-  updateLeaderboardMessage(client);
+  const loop = async () => {
+    try {
+      await updateLeaderboardMessage(client);
+    } finally {
+      setTimeout(loop, UPDATE_INTERVAL);
+    }
+  };
 
-  setInterval(() => {
-    updateLeaderboardMessage(client);
-  }, UPDATE_INTERVAL);
+  loop();
 }
 
 module.exports = {
-  startAutoLeaderboard
+  startAutoLeaderboard,
+  updateLeaderboardMessage
 };
