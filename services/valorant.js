@@ -118,14 +118,14 @@ async function request(name, tag) {
 }
 
 // Renvoie { rank, rr, elo, placement, stale }.
-// - cache de courte durée pour limiter les appels à l'API
+// - cache de courte durée pour limiter les appels à l'API (force: true l'ignore)
 // - si l'API échoue mais qu'on a déjà une valeur, on la renvoie avec stale: true
 // - sinon l'erreur est levée (error.status contient le code HTTP éventuel)
-async function getRR(name, tag) {
+async function getRR(name, tag, { force = false } = {}) {
   const key = cacheKey(name, tag);
   const cached = cache.get(key);
 
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+  if (!force && cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
     return { ...cached.data, stale: false };
   }
 
