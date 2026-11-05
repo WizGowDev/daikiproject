@@ -44,6 +44,19 @@ client.once(Events.ClientReady, readyClient => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
+  // Autocomplétion des options (ex : liste des comptes pour /elosit)
+  if (interaction.isAutocomplete()) {
+    const command = client.commands.get(interaction.commandName);
+    if (!command?.autocomplete) return;
+
+    try {
+      await command.autocomplete(interaction);
+    } catch (error) {
+      console.error(`❌ Erreur autocomplétion /${interaction.commandName} :`, error.message);
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
