@@ -117,10 +117,41 @@ function removeAccount(name, tag) {
   return { removed: true, account };
 }
 
+// Active / désactive la mention (elosit) sur un compte.
+// value: true / false, ou null pour inverser l'état actuel.
+function setElosit(name, tag, value = null) {
+  const target = normalize(name, tag);
+  const accounts = getAccounts();
+
+  const account = accounts.find(existing => isSameAccount(existing, target));
+
+  if (!account) {
+    return { found: false, changed: false, account: target };
+  }
+
+  const current = Boolean(account.elosit);
+  const next = value === null ? !current : Boolean(value);
+
+  if (next === current) {
+    return { found: true, changed: false, account };
+  }
+
+  if (next) {
+    account.elosit = true;
+  } else {
+    delete account.elosit;
+  }
+
+  writeJson("accounts.json", accounts);
+
+  return { found: true, changed: true, account };
+}
+
 module.exports = {
   getAccounts,
   addAccount,
   removeAccount,
+  setElosit,
   readJson,
   writeJson,
   deleteJson
