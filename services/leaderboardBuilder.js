@@ -48,8 +48,11 @@ function getPositionLabel(index) {
 }
 
 function formatPlayer(player) {
+  // Mention ajoutée avec /elosit : panneau à droite du pseudo + (elosit)
+  const name = player.elosit ? `${player.name} ⚠️ (elosit)` : player.name;
+
   if (player.unavailable) {
-    return `${player.name} (Indisponible) ⚠️`;
+    return `${name} (Indisponible) ⚠️`;
   }
 
   const rank = translateRank(player.rank);
@@ -60,7 +63,7 @@ function formatPlayer(player) {
   // (Immortel 1 et plus, selon ce que renvoie l'API).
   const top = player.placement ? ` • Top ${player.placement}` : "";
 
-  return `${player.name} (${rank}${top} | ${rr}rr)${warning}`;
+  return `${name} (${rank}${top} | ${rr}rr)${warning}`;
 }
 
 async function buildLeaderboardPayload({ force = false } = {}) {
@@ -91,6 +94,7 @@ async function buildLeaderboardPayload({ force = false } = {}) {
         elo: result.value.elo,
         placement: result.value.placement,
         stale: result.value.stale,
+        elosit: Boolean(account.elosit),
         unavailable: false
       };
     }
@@ -98,6 +102,7 @@ async function buildLeaderboardPayload({ force = false } = {}) {
     return {
       name: account.name,
       tag: account.tag,
+      elosit: Boolean(account.elosit),
       elo: -1,
       unavailable: true
     };
